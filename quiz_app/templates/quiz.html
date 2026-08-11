@@ -1,35 +1,27 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quiz Question</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        .container { max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ccc; border-radius: 8px; }
-        h2 { color: #333; }
-        .options label { display: block; margin-bottom: 10px; }
-        .options input[type="radio"] { margin-right: 10px; }
-        button { background-color: #28a745; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; margin-top: 15px; }
-        button:hover { background-color: #218838; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h2>Question {{ question_number }} of {{ total_questions }}</h2>
-        <p>{{ question }}</p>
-        <form action="{% url 'quiz_app:quiz' %}" method="post">
-            {% csrf_token %}
-            <div class="options">
-                {% for option in options %}
-                    <label>
-                        <input type="radio" name="answer" value="{{ option }}" required>
-                        {{ option }}
-                    </label>
-                {% endfor %}
-            </div>
-            <button type="submit">Next Question</button>
-        </form>
+{% extends 'base.html' %}
+
+{% block title %}Quiz Question - Nexora{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 700px; margin: 0 auto;">
+    <span class="pill">Question {{ question_number }} of {{ total_questions }}</span>
+    <div class="progress-track" style="margin-top: 1rem;">
+        <div class="progress-fill" style="width: {{ progress_percent }}%"></div>
     </div>
-</body>
-</html>
+    <h2 style="margin-top: 0.5rem;">{{ question }}</h2>
+    <p class="muted">Choose the best answer and continue to the next question.</p>
+
+    <form action="{% url 'quiz_app:quiz' %}" method="post">
+        {% csrf_token %}
+        <div style="display: flex; flex-direction: column; gap: 0.8rem; margin: 1.25rem 0 1.5rem;">
+            {% for option in options %}
+                <label style="display: flex; align-items: center; cursor: pointer; padding: 0.95rem 1rem; border: 1px solid var(--border-color); border-radius: 0.8rem; transition: border-color 0.2s;">
+                    <input type="radio" name="answer" value="{{ option }}" required style="width: auto; margin: 0 1rem 0 0;">
+                    <span style="font-weight: normal;">{{ option }}</span>
+                </label>
+            {% endfor %}
+        </div>
+        <button type="submit" class="btn-primary" style="width: 100%;">{% if is_final_question %}Submit Quiz{% else %}Next Question{% endif %}</button>
+    </form>
+</div>
+{% endblock %}

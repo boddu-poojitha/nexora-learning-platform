@@ -1,0 +1,42 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Nexora Learning Platform{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <header class="site-header">
+        <div class="container nav-wrap">
+            <a href="{% url 'quiz_app:index' %}" class="brand">
+                <span class="brand-mark">N</span>
+                <span>
+                    <strong>Nexora</strong>
+                    <small>Learning Platform</small>
+                </span>
+            </a>
+            <nav class="site-nav">
+                <a href="{% url 'quiz_app:index' %}">Home</a>
+                {% if user.is_authenticated %}
+                    <form action="{% url 'quiz_app:logout' %}" method="post" style="display: inline;">
+                        {% csrf_token %}
+                        <button type="submit" class="btn-logout">Logout</button>
+                    </form>
+                {% else %}
+                    <a href="{% url 'quiz_app:login' %}">Login</a>
+                    <a href="{% url 'quiz_app:register' %}" class="btn-primary">Sign Up</a>
+                {% endif %}
+            </nav>
+        </div>
+    </header>
+    <main>
+        <div class="page-shell">
+            {% block content %}{% endblock %}
+        </div>
+    </main>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

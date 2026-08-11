@@ -1,10 +1,15 @@
 # quiz_app/views.py
 import random
 from django.shortcuts import render, redirect
-from django.urls import reverse
+from django.urls import reverse, reverse_lazy
 from django.core.mail import send_mail
 from django.conf import settings
-from .models import Contestant, QuizResult
+from django.contrib import messages
+from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth.models import User
+from django.contrib.auth.decorators import login_required, user_passes_test
+from django.db.models import Avg, Count
+from .models import QuizResult, UserProfile
 
 # --- Quiz Questions Data (remains the same) ---
 QUIZ_QUESTIONS = {
@@ -77,51 +82,68 @@ QUIZ_QUESTIONS = {
 }
 
 
+def is_admin_user(user):
+    if not user or not user.is_authenticated:
+        return False
+    if user.is_staff or user.is_superuser:
+        return True
+    try:
+        profile = user.profile
+    except UserProfile.DoesNotExist:
+        return False
+    return profile.role == 'ADMIN'
+
+
 def index(request):
     return render(request, 'index.html')
 
+
+@login_required(login_url=reverse_lazy('quiz_app:login'))
+def quiz_start_page(request):
+    return render(request, 'quiz_start.html')
+
+
+def redirect_to_admin_dashboard(request):
+    return redirect(reverse('quiz_app:admin_dashboard'))
+
+
+def redirect_to_quiz_start(request):
+    return redirect(reverse('quiz_app:quiz_start'))
+
+
+def redirect_to_quiz_result(request):
+    return redirect(reverse('quiz_app:result'))
+
+
+@login_required(login_url=reverse_lazy('quiz_app:login'))
 def start_quiz(request):
     if request.method == 'POST':
-        contestant_name = request.POST.get('name')
-        contestant_email = request.POST.get('email')
         selected_language = request.POST.get('language')
+        if not selected_language:
+            return render(request, 'quiz_start.html', {'error_message': 'Please select a programming language.'})
 
-        if not all([contestant_name, contestant_email, selected_language]):
-            return render(request, 'index.html', {'error_message': 'Please fill in all fields and select a language.'})
-
-        try:
-            contestant, created = Contestant.objects.get_or_create(
-                email=contestant_email,
-                defaults={'name': contestant_name}
-            )
-            if not created and contestant.name != contestant_name:
-                contestant.name = contestant_name
-                contestant.save()
-
-        except Exception as e:
-            print(f"Error saving contestant: {e}")
-            return render(request, 'index.html', {'error_message': 'Database error while registering. Please try again.'})
-
-        request.session['contestant_id'] = contestant.id
+        contestant_name = request.user.get_full_name() or request.user.username
+        contestant_email = request.user.email
         request.session['contestant_name'] = contestant_name
         request.session['contestant_email'] = contestant_email
         request.session['selected_language'] = selected_language
 
         all_questions_for_lang = QUIZ_QUESTIONS.get(selected_language, [])
         if len(all_questions_for_lang) < 5:
-            return render(request, 'index.html', {'error_message': f'Not enough questions available for {selected_language}. Please choose another.'})
+            return render(request, 'quiz_start.html', {'error_message': f'Not enough questions available for {selected_language}. Please choose another.'})
 
         request.session['quiz_questions'] = random.sample(all_questions_for_lang, 5)
         request.session['current_question_index'] = 0
         request.session['score'] = 0
 
         return redirect(reverse('quiz_app:quiz'))
-    return redirect(reverse('quiz_app:index'))
+    return redirect(reverse('quiz_app:quiz_start'))
 
 
+@login_required(login_url=reverse_lazy('quiz_app:login'))
 def quiz(request):
     if 'quiz_questions' not in request.session or 'current_question_index' not in request.session:
-        return redirect(reverse('quiz_app:index'))
+        return redirect(reverse('quiz_app:quiz_start'))
 
     quiz_questions = request.session['quiz_questions']
     current_question_index = request.session['current_question_index']
@@ -138,11 +160,17 @@ def quiz(request):
 
     if current_question_index < len(quiz_questions):
         question_data = quiz_questions[current_question_index]
+        question_number = current_question_index + 1
+        total_questions = len(quiz_questions)
+        progress_percent = int((question_number / total_questions) * 100) if quiz_questions else 0
+        is_final_question = question_number == total_questions
         return render(request, 'quiz.html', {
             'question': question_data['question'],
             'options': question_data['options'],
-            'question_number': current_question_index + 1,
-            'total_questions': len(quiz_questions)
+            'question_number': question_number,
+            'total_questions': total_questions,
+            'progress_percent': progress_percent,
+            'is_final_question': is_final_question
         })
     else:
         contestant_id = request.session.get('contestant_id')
@@ -150,7 +178,17 @@ def quiz(request):
         total_questions = len(quiz_questions)
         language = request.session['selected_language']
 
-        if contestant_id:
+        if request.user.is_authenticated:
+            try:
+                QuizResult.objects.create(
+                    user=request.user,
+                    language=language,
+                    score=score,
+                    total_questions=total_questions
+                )
+            except Exception as e:
+                print(f"Error storing quiz result for user: {e}")
+        elif contestant_id:
             try:
                 contestant = Contestant.objects.get(id=contestant_id)
                 QuizResult.objects.create(
@@ -164,15 +202,16 @@ def quiz(request):
             except Exception as e:
                 print(f"Error storing quiz result: {e}")
         else:
-            print("Failed to store quiz results due to missing contestant ID.")
+            print("Failed to store quiz results due to missing user/contestant ID.")
 
-        send_quiz_result_email(
+        email_sent = send_quiz_result_email(
             request.session['contestant_email'],
             request.session['contestant_name'],
             language,
             score,
             total_questions
         )
+        request.session['email_sent'] = email_sent
 
         return redirect(reverse('quiz_app:result'))
 
@@ -185,6 +224,7 @@ def result(request):
     total_questions = len(request.session['quiz_questions'])
     contestant_name = request.session['contestant_name']
     language = request.session['selected_language']
+    email_sent = request.session.get('email_sent', False)
 
     # Clear session data after displaying results
     request.session.pop('quiz_questions', None)
@@ -194,12 +234,14 @@ def result(request):
     request.session.pop('contestant_name', None)
     request.session.pop('contestant_email', None)
     request.session.pop('selected_language', None)
+    request.session.pop('email_sent', None)
 
     return render(request, 'result.html', {
         'name': contestant_name,
         'score': score,
         'total': total_questions,
-        'language': language
+        'language': language,
+        'email_sent': email_sent
     })
 
 
@@ -227,5 +269,190 @@ def send_quiz_result_email(to_email, contestant_name, language, score, total_que
             fail_silently=False,
         )
         print(f"Email sent successfully to {to_email}")
+        return True
     except Exception as e:
         print(f"Failed to send email to {to_email}: {e}")
+        return False
+
+
+def send_welcome_email(to_email, full_name):
+    subject = 'Welcome to Nexora Learning Platform'
+    body = f"""
+    Hi {full_name},
+
+    Welcome to Nexora! Your account is ready, and you can now start practicing quizzes in C, Python, and Java.
+
+    We look forward to helping you build stronger programming skills.
+
+    Best regards,
+    The Nexora Team
+    """
+    try:
+        send_mail(
+            subject,
+            body,
+            settings.EMAIL_HOST_USER,
+            [to_email],
+            fail_silently=False,
+        )
+        return True
+    except Exception as e:
+        print(f"Failed to send welcome email to {to_email}: {e}")
+        return False
+
+# --- Authentication and Role Views ---
+
+def register_view(request):
+    if request.method == 'POST':
+        name = request.POST.get('name')
+        email = request.POST.get('email')
+        password = request.POST.get('password')
+        confirm_password = request.POST.get('confirm_password')
+
+        if not all([name, email, password, confirm_password]):
+            messages.error(request, 'Please fill in all fields.')
+            return render(request, 'register.html')
+
+        if password != confirm_password:
+            messages.error(request, 'Passwords do not match.')
+            return render(request, 'register.html')
+        
+        if User.objects.filter(email=email).exists():
+            messages.error(request, 'Email already registered.')
+            return render(request, 'register.html')
+        
+        try:
+            user = User.objects.create_user(username=email, email=email, password=password, first_name=name)
+            UserProfile.objects.create(user=user, role='LEARNER')
+            if send_welcome_email(email, name):
+                messages.success(request, 'Account created successfully. Please log in.')
+            else:
+                messages.warning(request, 'Account created. Please log in. Welcome email could not be delivered right now.')
+            return redirect(reverse('quiz_app:login'))
+        except Exception as e:
+            messages.error(request, 'An error occurred during registration.')
+            return render(request, 'register.html')
+
+    return render(request, 'register.html')
+
+
+def login_view(request):
+    if request.method == 'POST':
+        login_id = request.POST.get('email')
+        password = request.POST.get('password')
+
+        if not all([login_id, password]):
+            messages.error(request, 'Please provide both email/username and password.')
+            return render(request, 'login.html')
+
+        # Try to authenticate using the provided ID as a username
+        user = authenticate(request, username=login_id, password=password)
+        
+        # If that fails, try treating it as an email address
+        if user is None:
+            try:
+                user_obj = User.objects.get(email=login_id)
+                user = authenticate(request, username=user_obj.username, password=password)
+            except User.DoesNotExist:
+                pass
+            except User.MultipleObjectsReturned:
+                user_obj = User.objects.filter(email=login_id).first()
+                user = authenticate(request, username=user_obj.username, password=password)
+
+        if user is not None:
+            login(request, user)
+            if is_admin_user(user):
+                return redirect(reverse('quiz_app:admin_dashboard'))
+            return redirect(reverse('quiz_app:dashboard'))
+        else:
+            messages.error(request, 'Invalid credentials.')
+            return render(request, 'login.html')
+
+    return render(request, 'login.html')
+
+def logout_view(request):
+    logout(request)
+    return redirect(reverse('quiz_app:index'))
+
+@login_required(login_url=reverse_lazy('quiz_app:login'))
+def learner_dashboard_view(request):
+    if is_admin_user(request.user):
+        return redirect(reverse('quiz_app:admin_dashboard'))
+
+    recent_results = QuizResult.objects.filter(user=request.user).order_by('-id')[:5]
+    attempt_count = QuizResult.objects.filter(user=request.user).count()
+    latest_result = recent_results.first() if recent_results else None
+    
+    return render(request, 'learner_dashboard.html', {
+        'recent_results': recent_results,
+        'username': request.user.first_name or request.user.username,
+        'attempt_count': attempt_count,
+        'latest_result': latest_result
+    })
+
+@user_passes_test(is_admin_user, login_url=reverse_lazy('quiz_app:login'), redirect_field_name=None)
+def admin_dashboard_view(request):
+    learner_count = UserProfile.objects.filter(role='LEARNER').count()
+    total_attempts = QuizResult.objects.count()
+    average_score = QuizResult.objects.aggregate(avg_score=Avg('score'))['avg_score'] or 0
+    recent_results = QuizResult.objects.select_related('user', 'contestant').order_by('-id')[:8]
+
+    recent_activity = []
+    for result in recent_results:
+        if result.user:
+            display_name = result.user.get_full_name() or result.user.username
+            display_email = result.user.email
+            timestamp = result.user.date_joined
+        else:
+            display_name = result.contestant.name if result.contestant else 'Anonymous'
+            display_email = result.contestant.email if result.contestant else 'N/A'
+            timestamp = result.contestant.timestamp if result.contestant else None
+
+        recent_activity.append({
+            'name': display_name,
+            'email': display_email,
+            'language': result.language,
+            'score': result.score,
+            'total_questions': result.total_questions,
+            'timestamp': timestamp,
+        })
+
+    learner_summaries = []
+    for learner in User.objects.filter(profile__role='LEARNER').select_related('profile').order_by('-date_joined'):
+        learner_results = QuizResult.objects.filter(user=learner).order_by('-id')
+        latest_result = learner_results.first()
+        learner_summaries.append({
+            'name': learner.get_full_name() or learner.username,
+            'email': learner.email,
+            'registered_on': learner.date_joined,
+            'attempt_count': learner_results.count(),
+            'latest_score': latest_result.score if latest_result else None,
+        })
+
+    language_stats = []
+    for language in ['C', 'Python', 'Java']:
+        language_result = QuizResult.objects.filter(language=language).aggregate(
+            attempt_count=Count('id'),
+            average_score=Avg('score'),
+            average_total_questions=Avg('total_questions'),
+        )
+        average_score_value = language_result['average_score'] or 0
+        average_total_questions = language_result['average_total_questions'] or 1
+        score_percentage = round((average_score_value / average_total_questions) * 100, 1) if average_total_questions else 0
+        language_stats.append({
+            'language': language,
+            'attempt_count': language_result['attempt_count'] or 0,
+            'average_score': round(average_score_value, 1),
+            'score_percentage': score_percentage,
+        })
+
+    return render(request, 'admin_dashboard.html', {
+        'learner_count': learner_count,
+        'total_attempts': total_attempts,
+        'average_score': round(average_score, 1),
+        'recent_activity': recent_activity,
+        'learner_summaries': learner_summaries,
+        'language_stats': language_stats,
+        'email_delivery_available': hasattr(QuizResult, 'email_sent'),
+        'username': request.user.first_name or request.user.username
+    })

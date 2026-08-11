@@ -1,0 +1,98 @@
+{% extends 'base.html' %}
+
+{% block title %}Admin Dashboard - Nexora{% endblock %}
+
+{% block content %}
+<div class="panel">
+    <div class="hero" style="margin-bottom: 1.25rem;">
+        <h1>Nexora Admin Dashboard</h1>
+        <p>Welcome back, {{ username }}. This overview reflects learner activity, quiz outcomes, and platform engagement.</p>
+        <div class="hero-actions">
+            <a href="{% url 'admin:index' %}" class="btn-primary" target="_blank">Open Django Admin</a>
+        </div>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <span class="pill">Total learners</span>
+            <strong>{{ learner_count }}</strong>
+        </div>
+        <div class="stat-card">
+            <span class="pill">Total quiz attempts</span>
+            <strong>{{ total_attempts }}</strong>
+        </div>
+        <div class="stat-card">
+            <span class="pill">Average score</span>
+            <strong>{{ average_score }}</strong>
+        </div>
+        <div class="stat-card">
+            <span class="pill">Quiz results</span>
+            <strong>{{ total_attempts }}</strong>
+        </div>
+    </div>
+
+    <div class="card-grid" style="margin-bottom: 1.25rem;">
+        <div class="card">
+            <h3 style="margin-top: 0;">Recent activity</h3>
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="border-bottom: 1px solid var(--border-color);">
+                        <th style="text-align: left; padding: 0.6rem 0;">Learner</th>
+                        <th style="text-align: left; padding: 0.6rem 0;">Language</th>
+                        <th style="text-align: left; padding: 0.6rem 0;">Score</th>
+                        <th style="text-align: left; padding: 0.6rem 0;">Timestamp</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in recent_activity %}
+                    <tr style="border-bottom: 1px solid var(--border-color);">
+                        <td style="padding: 0.6rem 0;">{{ item.name }}</td>
+                        <td>{{ item.language }}</td>
+                        <td>{{ item.score }}/{{ item.total_questions }}</td>
+                        <td>{{ item.timestamp|date:"M d, Y" }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="4" class="muted">No quiz activity yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="card">
+            <h3 style="margin-top: 0;">Learner management</h3>
+            <div style="display: grid; gap: 0.75rem;">
+                {% for learner in learner_summaries %}
+                <div style="padding: 0.8rem; border: 1px solid var(--border-color); border-radius: 0.8rem;">
+                    <strong>{{ learner.name }}</strong>
+                    <div class="muted" style="font-size: 0.9rem;">{{ learner.email }}</div>
+                    <div class="muted" style="font-size: 0.9rem;">Registered: {{ learner.registered_on|date:"M d, Y" }} · Attempts: {{ learner.attempt_count }} · Latest score: {{ learner.latest_score|default:"—" }}</div>
+                </div>
+                {% empty %}
+                <div class="muted">No learners registered yet.</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <div class="card-grid">
+        <div class="card">
+            <h3 style="margin-top: 0;">Quiz results management</h3>
+            <p class="muted">Detailed quiz result activity appears in the Django admin panel and is aggregated here for quick review.</p>
+            <div class="muted">Email delivery status is tracked by the existing mail workflow and remains unchanged.</div>
+        </div>
+        <div class="card">
+            <h3 style="margin-top: 0;">Language analytics</h3>
+            {% for stat in language_stats %}
+            <div style="margin-bottom: 0.95rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                    <strong>{{ stat.language }}</strong>
+                    <span class="muted">{{ stat.attempt_count }} attempts · avg {{ stat.average_score }}</span>
+                </div>
+                <div class="progress-track">
+                    <div class="progress-fill" style="width: {{ stat.score_percentage }}%;"></div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}

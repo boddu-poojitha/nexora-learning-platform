@@ -1,27 +1,29 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quiz Results</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        .container { max-width: 500px; margin: auto; padding: 20px; border: 1px solid #ccc; border-radius: 8px; text-align: center; }
-        h1 { color: #007bff; }
-        p { font-size: 1.1em; }
-        .score { font-size: 1.5em; font-weight: bold; color: #28a745; }
-        .home-button { background-color: #6c757d; color: white; padding: 10px 15px; border: none; border-radius: 5px; cursor: pointer; text-decoration: none; display: inline-block; margin-top: 20px;}
-        .home-button:hover { background-color: #5a6268; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Quiz Completed!</h1>
-        <p>Congratulations, {{ name }}!</p>
-        <p>You participated in the <strong>{{ language }}</strong> quiz.</p>
-        <p>Your Score: <span class="score">{{ score }}</span> out of {{ total }}</p>
-        <p>A detailed result has been sent to your email address.</p>
-        <a href="{% url 'quiz_app:index' %}" class="home-button">Start Another Quiz</a>
+{% extends 'base.html' %}
+
+{% block title %}Quiz Results - Nexora{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 640px; margin: 0 auto; text-align: center;">
+    <span class="pill">Quiz completed</span>
+    <h1 style="color: var(--primary-color); margin: 0.8rem 0 0.3rem;">Congratulations, {{ name }}!</h1>
+    <p class="muted">You completed the <strong>{{ language }}</strong> quiz and your results are ready.</p>
+
+    <div style="background: linear-gradient(135deg, #f8fafc, #eef2ff); border-radius: 1rem; padding: 2rem; margin: 1.5rem 0;">
+        <p style="margin-top: 0; color: var(--muted-color);">Your score</p>
+        <div style="font-size: 2.3rem; font-weight: 700; color: var(--success-color);">{{ score }} <span style="font-size: 1.1rem; color: var(--muted-color); font-weight: 500;">out of {{ total }}</span></div>
     </div>
-</body>
-</html>
+
+    {% if email_sent %}
+        <p class="success-message" style="text-align: left;">Your quiz result was sent to your email address.</p>
+    {% else %}
+        <p class="error-message" style="text-align: left;">We couldn't send your result email right now. Your quiz result has still been recorded.</p>
+    {% endif %}
+
+    <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; margin-top: 0.5rem;">
+        {% if user.is_authenticated %}
+            <a href="{% url 'quiz_app:dashboard' %}" class="btn-secondary">Back to Dashboard</a>
+        {% endif %}
+        <a href="{% url 'quiz_app:quiz_start' %}" class="btn-primary">Start Another Quiz</a>
+    </div>
+</div>
+{% endblock %}
