@@ -266,14 +266,14 @@ def send_quiz_result_email(to_email, contestant_name, language, score, total_que
             body,
             settings.EMAIL_HOST_USER,
             [to_email],
-            fail_silently=False,
+            fail_silently=True,
+            timeout=5,  # Prevents server hanging on email send
         )
         print(f"Email sent successfully to {to_email}")
         return True
     except Exception as e:
         print(f"Failed to send email to {to_email}: {e}")
         return False
-
 
 def send_welcome_email(to_email, full_name):
     subject = 'Welcome to Nexora Learning Platform'
