@@ -288,17 +288,23 @@ def send_welcome_email(to_email, full_name):
     The Nexora Team
     """
     try:
+        # Avoid hanging if EMAIL_HOST_USER is missing or empty
+        if not getattr(settings, 'EMAIL_HOST_USER', None):
+            print("EMAIL_HOST_USER not configured. Skipping welcome email.")
+            return False
+
         send_mail(
             subject,
             body,
             settings.EMAIL_HOST_USER,
             [to_email],
-            fail_silently=False,
+            fail_silently=True,
+            timeout=3,  # Forces connection to abort after 3 seconds instead of hanging Gunicorn
         )
         return True
     except Exception as e:
         print(f"Failed to send welcome email to {to_email}: {e}")
-        return False
+        return False    
 
 # --- Authentication and Role Views ---
 
